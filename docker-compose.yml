@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: event-driven-ledger-postgres
+    environment:
+      POSTGRES_DB: event_driven_ledger
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+    ports:
+      - "5437:5432"
+    volumes:
+      - ledger-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  ledger-postgres-data:
+

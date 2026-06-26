@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: event-driven-ledger-platform
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5437/event_driven_ledger}
+    username: ${DB_USERNAME:ledger}
+    password: ${DB_PASSWORD:ledger}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+server:
+  error:
+    include-message: always
+
