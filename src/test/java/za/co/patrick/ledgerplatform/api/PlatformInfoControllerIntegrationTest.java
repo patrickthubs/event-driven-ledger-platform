@@ -25,7 +25,7 @@ class PlatformInfoControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.name").value("Event-Driven Ledger Platform"))
-                .andExpect(jsonPath("$.status").value("BOOTSTRAPPED"))
-                .andExpect(jsonPath("$.capabilities[0]").value("ledger-posting"));
+                .andExpect(jsonPath("$.status").value("MVP_IN_PROGRESS"))
+                .andExpect(jsonPath("$.capabilities[0]").value("account-management"));
     }
 }
