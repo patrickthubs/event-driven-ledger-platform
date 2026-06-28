@@ -17,6 +17,7 @@ import za.co.patrick.ledgerplatform.api.PostJournalEntryRequest;
 import za.co.patrick.ledgerplatform.api.ReverseJournalEntryRequest;
 import za.co.patrick.ledgerplatform.api.TrialBalanceEntryResponse;
 import za.co.patrick.ledgerplatform.api.TrialBalanceResponse;
+import za.co.patrick.ledgerplatform.config.OutboxKafkaProperties;
 import za.co.patrick.ledgerplatform.domain.AccountStatus;
 import za.co.patrick.ledgerplatform.domain.AccountType;
 import za.co.patrick.ledgerplatform.domain.EntryDirection;
@@ -57,6 +58,7 @@ public class LedgerService {
     private final OutboxEventEntityRepository outboxEventRepository;
     private final LedgerPostingValidator ledgerPostingValidator;
     private final ObjectMapper objectMapper;
+    private final OutboxKafkaProperties outboxKafkaProperties;
 
     public LedgerService(
             LedgerAccountEntityRepository ledgerAccountRepository,
@@ -64,7 +66,8 @@ public class LedgerService {
             JournalEntryLineEntityRepository journalEntryLineRepository,
             OutboxEventEntityRepository outboxEventRepository,
             LedgerPostingValidator ledgerPostingValidator,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            OutboxKafkaProperties outboxKafkaProperties
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.journalEntryRepository = journalEntryRepository;
@@ -72,6 +75,7 @@ public class LedgerService {
         this.outboxEventRepository = outboxEventRepository;
         this.ledgerPostingValidator = ledgerPostingValidator;
         this.objectMapper = objectMapper;
+        this.outboxKafkaProperties = outboxKafkaProperties;
     }
 
     @Transactional
@@ -373,6 +377,8 @@ public class LedgerService {
                 "JOURNAL_ENTRY",
                 journalEntry.getId(),
                 outboxEventType,
+                outboxKafkaProperties.topicName(),
+                journalEntry.getId().toString(),
                 serializeEvent(new JournalEntryPostedEvent(
                         journalEntry.getId(),
                         journalEntry.getIdempotencyKey(),
@@ -386,6 +392,11 @@ public class LedgerService {
                         reversalReason
                 )),
                 OffsetDateTime.now(),
+                null,
+                null,
+                0,
+                null,
+                null,
                 null
         ));
 
@@ -513,9 +524,16 @@ public class LedgerService {
                 entity.getAggregateType(),
                 entity.getAggregateId(),
                 entity.getEventType(),
+                entity.getDestinationTopic(),
+                entity.getMessageKey(),
                 entity.getPayload(),
                 entity.getCreatedAt(),
-                entity.getPublishedAt()
+                entity.getPublishedAt(),
+                entity.getLastAttemptedAt(),
+                entity.getPublishAttemptCount(),
+                entity.getLastPublishError(),
+                entity.getPublishedPartition(),
+                entity.getPublishedOffset()
         );
     }
 

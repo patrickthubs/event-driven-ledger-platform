@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import za.co.patrick.ledgerplatform.application.JournalPostingResult;
 import za.co.patrick.ledgerplatform.application.LedgerService;
+import za.co.patrick.ledgerplatform.application.OutboxProcessingService;
 
 import java.net.URI;
 import java.util.List;
@@ -22,9 +23,11 @@ import java.util.UUID;
 class JournalEntryController {
 
     private final LedgerService ledgerService;
+    private final OutboxProcessingService outboxProcessingService;
 
-    JournalEntryController(LedgerService ledgerService) {
+    JournalEntryController(LedgerService ledgerService, OutboxProcessingService outboxProcessingService) {
         this.ledgerService = ledgerService;
+        this.outboxProcessingService = outboxProcessingService;
     }
 
     @PostMapping("/journal-entries")
@@ -76,6 +79,11 @@ class JournalEntryController {
 
     @PostMapping("/outbox-events/{eventId}/publish")
     OutboxEventResponse markOutboxEventPublished(@PathVariable UUID eventId) {
-        return ledgerService.markOutboxEventPublished(eventId);
+        return outboxProcessingService.publishEvent(eventId);
+    }
+
+    @PostMapping("/outbox-events/publish-batch")
+    OutboxPublishBatchResponse publishOutboxBatch(@RequestParam(defaultValue = "10") int batchSize) {
+        return outboxProcessingService.publishPendingBatch(batchSize);
     }
 }

@@ -1,6 +1,6 @@
 # Event-Driven Ledger Platform
 
-Production-style Java 26 and Spring Boot 4 backend for an immutable, double-entry ledger with idempotent posting, reversals, outbox events, trial balance reporting, and account statements.
+Production-style Java 26 and Spring Boot 4 backend for an immutable, double-entry ledger with idempotent posting, Kafka-backed outbox publishing, reconciliation operations, trial balance reporting, account statements, and persisted role-based security.
 
 This project exists to show more than CRUD. It demonstrates the sort of backend design recruiters expect to see in payment, banking, treasury, and financial platform work: correctness, auditability, event-driven integration boundaries, and careful API design.
 
@@ -11,9 +11,13 @@ This project exists to show more than CRUD. It demonstrates the sort of backend 
 - calculates derived balances from immutable journal lines
 - supports journal reversal flows
 - persists outbox events for downstream publishing
-- marks outbox events as published through an acknowledgment endpoint
+- publishes outbox events to Kafka with topic metadata, message keys, and retry tracking
 - exposes trial balance reporting
 - exposes account statements with opening balance, running balance, and closing balance
+- records reconciliation runs with tolerance, review assignment, and resolution workflows
+- protects sensitive endpoints with persisted users, BCrypt passwords, and role-based HTTP Basic authentication
+- includes PostgreSQL-backed integration validation with Testcontainers when Docker is available
+- includes Kafka-backed integration validation with Testcontainers when Docker is available
 - documents the API with Swagger/OpenAPI
 
 ## Architecture
@@ -36,10 +40,13 @@ The design intentionally keeps controllers thin and pushes business rules into t
 - Java 26
 - Spring Boot 4.1
 - Spring Data JPA
+- Spring Security
+- Spring for Apache Kafka
 - PostgreSQL
 - Flyway
 - springdoc OpenAPI / Swagger UI
 - JUnit 5
+- Testcontainers
 - Docker Compose
 - H2 test profile for fast local verification
 
@@ -58,7 +65,14 @@ The design intentionally keeps controllers thin and pushes business rules into t
 - `POST /api/v1/journal-entries/{journalEntryId}/reversals`
 - `GET /api/v1/outbox-events`
 - `POST /api/v1/outbox-events/{eventId}/publish`
+- `POST /api/v1/outbox-events/publish-batch`
 - `GET /api/v1/reports/trial-balance`
+- `POST /api/v1/reconciliations`
+- `GET /api/v1/reconciliations`
+- `GET /api/v1/reconciliations/{reconciliationId}`
+- `POST /api/v1/reconciliations/{reconciliationId}/assign`
+- `POST /api/v1/reconciliations/{reconciliationId}/resolve`
+- `GET /api/v1/admin/users`
 
 ## Example Flows
 
@@ -124,9 +138,35 @@ GET /api/v1/reports/trial-balance?currency=ZAR
 GET /api/v1/accounts/{accountId}/statement?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z
 ```
 
+### Create a reconciliation run
+
+```json
+POST /api/v1/reconciliations
+{
+  "accountId": "cash-account-id",
+  "from": "2026-07-01T00:00:00Z",
+  "to": "2026-07-31T23:59:59Z",
+  "externalBalance": 970.00,
+  "toleranceAmount": 10.00,
+  "externalReference": "BANK-STMT-001",
+  "notes": "Month-end cash confirmation"
+}
+```
+
+### Resolve a reconciliation exception
+
+```json
+POST /api/v1/reconciliations/{reconciliationId}/resolve
+{
+  "resolutionType": "EXTERNAL_CORRECTION",
+  "resolvedBy": "reconciler",
+  "resolutionNotes": "External statement corrected after cutoff review"
+}
+```
+
 ## Local Run
 
-1. Start PostgreSQL.
+1. Start PostgreSQL and Kafka.
 
 ```bash
 docker compose up -d
@@ -153,6 +193,15 @@ Override these when needed:
 - `DB_URL`
 - `DB_USERNAME`
 - `DB_PASSWORD`
+- `KAFKA_BOOTSTRAP_SERVERS`
+
+Default seeded local users:
+
+- `admin` / `admin`
+- `auditor` / `auditor`
+- `operator` / `operator`
+- `publisher` / `publisher`
+- `reconciler` / `reconciler`
 
 ## Testing
 
@@ -163,13 +212,11 @@ mvn test
 mvn clean verify
 ```
 
-The default tests use H2 for quick feedback while keeping Flyway migrations active. The project is structured so PostgreSQL-backed validation can be tightened further as the ledger grows.
+The default tests use H2 for quick feedback while keeping Flyway migrations active. PostgreSQL-backed and Kafka-backed Testcontainers tests are also included and will run when Docker is available.
 
 ## Roadmap
 
-- outbox polling worker or broker adapter
 - as-of-date reporting beyond current balance snapshots
-- reconciliation workflows
 - holds or reservations
 - multi-tenant ledger boundaries
-- PostgreSQL-backed integration coverage with Testcontainers
+- reconciliation line-level matching against external statements

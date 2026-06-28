@@ -14,12 +14,36 @@ spring:
         format_sql: true
   flyway:
     enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1
+        delivery.timeout.ms: 30000
 
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+app:
+  outbox:
+    publisher:
+      type: kafka
+    kafka:
+      topic-name: ledger.journal.entries
+      partitions: 3
+      replication-factor: 1
+    processor:
+      enabled: true
+      batch-size: 20
+      fixed-delay-ms: 30000
+      initial-delay-ms: 5000
+
 server:
   error:
     include-message: always
-

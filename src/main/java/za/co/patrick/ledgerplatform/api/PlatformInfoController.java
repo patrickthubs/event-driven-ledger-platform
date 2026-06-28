@@ -21,10 +21,13 @@ class PlatformInfoController {
                         "ledger-posting",
                         "journal-reversals",
                         "event-publication",
-                        "outbox-publish-ack",
+                        "kafka-outbox-publishing",
+                        "outbox-publish-retries",
                         "trial-balance-reporting",
                         "account-statements",
-                        "reconciliation",
+                        "reconciliation-runs",
+                        "reconciliation-review-workflows",
+                        "persisted-role-based-authentication",
                         "audit-trail"
                 )
         );

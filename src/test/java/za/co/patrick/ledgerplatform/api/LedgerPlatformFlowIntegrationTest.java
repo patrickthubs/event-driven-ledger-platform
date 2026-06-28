@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -72,6 +73,7 @@ class LedgerPlatformFlowIntegrationTest {
                 """.formatted(cashId, equityId);
 
         String journalLocation = mockMvc.perform(post("/api/v1/journal-entries")
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isCreated())
@@ -84,49 +86,51 @@ class LedgerPlatformFlowIntegrationTest {
                 .getHeader("Location");
 
         mockMvc.perform(post("/api/v1/journal-entries")
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.idempotencyKey").value("funding-001"));
 
-        mockMvc.perform(get(cashLocation))
+        mockMvc.perform(get(cashLocation).with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentBalance").value(1000.00))
                 .andExpect(jsonPath("$.accountType").value("ASSET"));
 
-        mockMvc.perform(get(equityLocation))
+        mockMvc.perform(get(equityLocation).with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentBalance").value(1000.00))
                 .andExpect(jsonPath("$.accountType").value("EQUITY"));
 
-        mockMvc.perform(get(journalLocation))
+        mockMvc.perform(get(journalLocation).with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.lines[0].accountNumber").exists())
                 .andExpect(jsonPath("$.lines.length()").value(2));
 
-        mockMvc.perform(get("/api/v1/outbox-events"))
+        mockMvc.perform(get("/api/v1/outbox-events").with(httpBasic("publisher", "publisher")))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$[0].eventType").value("JOURNAL_ENTRY_POSTED"))
+                .andExpect(jsonPath("$[0].destinationTopic").value("ledger.journal.entries"))
                 .andExpect(jsonPath("$[0].payload").value(containsString("funding-001")));
 
-        mockMvc.perform(get("/api/v1/outbox-events?published=false"))
+        mockMvc.perform(get("/api/v1/outbox-events?published=false").with(httpBasic("publisher", "publisher")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].eventType").value("JOURNAL_ENTRY_POSTED"));
 
-        mockMvc.perform(get("/api/v1/accounts/number/1000"))
+        mockMvc.perform(get("/api/v1/accounts/number/1000").with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountName").value("Cash"));
 
-        mockMvc.perform(get("/api/v1/accounts/%s/journal-entries".formatted(cashId)))
+        mockMvc.perform(get("/api/v1/accounts/%s/journal-entries".formatted(cashId)).with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].idempotencyKey").value("funding-001"));
 
-        mockMvc.perform(get("/api/v1/journal-entries?externalReference=EXT-FUND-001"))
+        mockMvc.perform(get("/api/v1/journal-entries?externalReference=EXT-FUND-001").with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].externalReference").value("EXT-FUND-001"));
 
-        mockMvc.perform(get("/api/v1/reports/trial-balance?currency=ZAR"))
+        mockMvc.perform(get("/api/v1/reports/trial-balance?currency=ZAR").with(httpBasic("auditor", "auditor")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currency").value("ZAR"))
                 .andExpect(jsonPath("$.totalDebits").value(1000.00))
@@ -137,6 +141,7 @@ class LedgerPlatformFlowIntegrationTest {
                 .andExpect(jsonPath("$.entries[1].creditBalance").value(1000.00));
 
         mockMvc.perform(get("/api/v1/accounts/%s/statement".formatted(cashId))
+                        .with(httpBasic("auditor", "auditor"))
                         .param("from", "2026-07-01T00:00:00Z")
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk())
@@ -147,7 +152,7 @@ class LedgerPlatformFlowIntegrationTest {
                 .andExpect(jsonPath("$.entries[0].journalEntryId").exists())
                 .andExpect(jsonPath("$.entries[0].runningBalance").value(1000.00));
 
-        String unpublishedEventId = mockMvc.perform(get("/api/v1/outbox-events?published=false"))
+        String unpublishedEventId = mockMvc.perform(get("/api/v1/outbox-events?published=false").with(httpBasic("publisher", "publisher")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].publishedAt").isEmpty())
                 .andReturn()
@@ -155,15 +160,85 @@ class LedgerPlatformFlowIntegrationTest {
                 .getContentAsString()
                 .replaceAll(".*\\\"eventId\\\":\\\"([^\\\"]+)\\\".*", "$1");
 
-        mockMvc.perform(post("/api/v1/outbox-events/%s/publish".formatted(unpublishedEventId)))
+        mockMvc.perform(post("/api/v1/outbox-events/%s/publish".formatted(unpublishedEventId))
+                        .with(httpBasic("publisher", "publisher")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.eventId").value(unpublishedEventId))
-                .andExpect(jsonPath("$.publishedAt").isNotEmpty());
+                .andExpect(jsonPath("$.publishedAt").isNotEmpty())
+                .andExpect(jsonPath("$.messageKey").isNotEmpty());
 
-        mockMvc.perform(get("/api/v1/outbox-events?published=true"))
+        mockMvc.perform(get("/api/v1/outbox-events?published=true").with(httpBasic("publisher", "publisher")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].eventId").value(unpublishedEventId))
                 .andExpect(jsonPath("$[0].publishedAt").isNotEmpty());
+
+        String reconciliationLocation = mockMvc.perform(post("/api/v1/reconciliations")
+                        .with(httpBasic("reconciler", "reconciler"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "accountId": "%s",
+                                  "from": "2026-07-01T00:00:00Z",
+                                  "to": "2026-07-31T23:59:59Z",
+                                  "externalBalance": 970.00,
+                                  "toleranceAmount": 10.00,
+                                  "externalReference": "BANK-STMT-001",
+                                  "notes": "Month-end cash confirmation"
+                                }
+                                """.formatted(cashId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("MISMATCHED"))
+                .andExpect(jsonPath("$.differenceAmount").value(30.00))
+                .andExpect(jsonPath("$.toleranceAmount").value(10.00))
+                .andExpect(jsonPath("$.accountNumber").value("1000"))
+                .andReturn()
+                .getResponse()
+                .getHeader("Location");
+
+        mockMvc.perform(post("%s/assign".formatted(reconciliationLocation))
+                        .with(httpBasic("reconciler", "reconciler"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assignedTo": "ops.user",
+                                  "reviewNotes": "Investigate bank timing difference"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.assignedTo").value("ops.user"));
+
+        mockMvc.perform(post("%s/resolve".formatted(reconciliationLocation))
+                        .with(httpBasic("reconciler", "reconciler"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "resolutionType": "EXTERNAL_CORRECTION",
+                                  "resolvedBy": "reconciler",
+                                  "resolutionNotes": "External statement corrected after cutoff review"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESOLVED"))
+                .andExpect(jsonPath("$.resolutionType").value("EXTERNAL_CORRECTION"))
+                .andExpect(jsonPath("$.resolvedBy").value("reconciler"));
+
+        mockMvc.perform(get("/api/v1/reconciliations").with(httpBasic("reconciler", "reconciler")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].externalReference").value("BANK-STMT-001"));
+
+        mockMvc.perform(get("/api/v1/reconciliations?status=RESOLVED").with(httpBasic("reconciler", "reconciler")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("RESOLVED"));
+
+        mockMvc.perform(get("/api/v1/admin/users").with(httpBasic("admin", "admin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].username").value("admin"));
+
+        mockMvc.perform(post("/api/v1/journal-entries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -213,6 +288,7 @@ class LedgerPlatformFlowIntegrationTest {
                 """.formatted(cashId, revenueId);
 
         mockMvc.perform(post("/api/v1/journal-entries")
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isBadRequest())
@@ -269,6 +345,7 @@ class LedgerPlatformFlowIntegrationTest {
                 """.formatted(expenseId, cashId);
 
         String originalLocation = mockMvc.perform(post("/api/v1/journal-entries")
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(postRequest))
                 .andExpect(status().isCreated())
@@ -277,6 +354,7 @@ class LedgerPlatformFlowIntegrationTest {
                 .getHeader("Location");
 
         mockMvc.perform(post("%s/reversals".formatted(originalLocation))
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -290,6 +368,7 @@ class LedgerPlatformFlowIntegrationTest {
                 .andExpect(jsonPath("$.lines[0].direction").exists());
 
         mockMvc.perform(post("%s/reversals".formatted(originalLocation))
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -303,6 +382,7 @@ class LedgerPlatformFlowIntegrationTest {
 
     private String createAccount(String requestBody) throws Exception {
         return mockMvc.perform(post("/api/v1/accounts")
+                        .with(httpBasic("operator", "operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isCreated())

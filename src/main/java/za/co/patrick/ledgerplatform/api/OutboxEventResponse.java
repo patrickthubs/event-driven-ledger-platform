@@ -8,8 +8,15 @@ public record OutboxEventResponse(
         String aggregateType,
         UUID aggregateId,
         String eventType,
+        String destinationTopic,
+        String messageKey,
         String payload,
         OffsetDateTime createdAt,
-        OffsetDateTime publishedAt
+        OffsetDateTime publishedAt,
+        OffsetDateTime lastAttemptedAt,
+        int publishAttemptCount,
+        String lastPublishError,
+        Integer publishedPartition,
+        Long publishedOffset
 ) {
 }

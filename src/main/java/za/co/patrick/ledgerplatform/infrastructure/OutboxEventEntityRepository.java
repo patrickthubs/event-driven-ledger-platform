@@ -1,5 +1,7 @@
 package za.co.patrick.ledgerplatform.infrastructure;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -12,4 +14,6 @@ public interface OutboxEventEntityRepository extends JpaRepository<OutboxEventEn
     List<OutboxEventEntity> findAllByPublishedAtIsNullOrderByCreatedAtAsc();
 
     List<OutboxEventEntity> findAllByPublishedAtIsNotNullOrderByPublishedAtDescCreatedAtDesc();
+
+    Page<OutboxEventEntity> findByPublishedAtIsNullOrderByCreatedAtAsc(Pageable pageable);
 }

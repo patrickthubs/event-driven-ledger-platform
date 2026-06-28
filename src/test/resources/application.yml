@@ -13,9 +13,25 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: true
+  kafka:
+    bootstrap-servers: localhost:29092
 
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
+
+app:
+  outbox:
+    publisher:
+      type: logging
+    kafka:
+      topic-name: ledger.journal.entries
+      partitions: 1
+      replication-factor: 1
+    processor:
+      enabled: false
+      batch-size: 20
+      fixed-delay-ms: 30000
+      initial-delay-ms: 5000
