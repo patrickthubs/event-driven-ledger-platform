@@ -326,15 +326,6 @@ You should see a JSON event containing the same journal entry and idempotency ke
 - `curl -u reconciler:reconciler -X POST http://localhost:8080/api/v1/reconciliations ...`
 - `curl -u admin:admin http://localhost:8080/api/v1/admin/users`
 
-## Troubleshooting
-
-- If `docker compose up -d` fails with `open //./pipe/dockerDesktopLinuxEngine`, start Docker Desktop first and wait for the Linux engine to finish booting.
-- If `java -jar target/event-driven-ledger-platform-0.0.1-SNAPSHOT.jar` fails with `UnsupportedClassVersionError`, run it with your Java 26 installation or update `JAVA_HOME` and `PATH` to point to Java 26.
-- If `docker compose ps` shows PostgreSQL but not Kafka, run `docker compose logs kafka` first.
-- The application connects to Kafka from the host with `localhost:9092`.
-- Kafka inspection from inside the container should use `kafka:19092`, not `localhost:9092`.
-- On this machine, direct `docker compose` works reliably, but Testcontainers may still skip Docker-backed tests if Java cannot detect Docker Desktop correctly.
-
 ## Roadmap
 
 - as-of-date reporting beyond current balance snapshots
