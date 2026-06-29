@@ -178,6 +178,8 @@ docker compose up -d
 mvn spring-boot:run
 ```
 
+Use a Java 26 runtime for local runs. If `mvn` works but `java -jar` fails with `UnsupportedClassVersionError`, your default `java` on `PATH` is likely pointing at an older JDK.
+
 3. Open Swagger UI.
 
 ```text
@@ -213,6 +215,125 @@ mvn clean verify
 ```
 
 The default tests use H2 for quick feedback while keeping Flyway migrations active. PostgreSQL-backed and Kafka-backed Testcontainers tests are also included and will run when Docker is available.
+
+## End-To-End Smoke Test
+
+This is a good first run for someone seeing the project for the first time. It proves:
+
+- the app starts against PostgreSQL
+- secured APIs work with seeded users
+- journal posting creates an outbox event
+- the outbox event is published to Kafka
+- the broker really stores the ledger event
+
+### 1. Start dependencies
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+You should see both `postgres` and `kafka` running.
+
+### 2. Start the application
+
+```bash
+mvn spring-boot:run
+```
+
+### 3. Check the public platform endpoint
+
+```bash
+curl http://localhost:8080/api/v1/platform-info
+```
+
+### 4. Create two accounts as the operator user
+
+```bash
+curl -u operator:operator -X POST http://localhost:8080/api/v1/accounts ^
+  -H "Content-Type: application/json" ^
+  -d "{\"accountNumber\":\"1000\",\"accountName\":\"Cash\",\"accountType\":\"ASSET\",\"currency\":\"USD\",\"allowNegativeBalance\":false}"
+```
+
+```bash
+curl -u operator:operator -X POST http://localhost:8080/api/v1/accounts ^
+  -H "Content-Type: application/json" ^
+  -d "{\"accountNumber\":\"3000\",\"accountName\":\"Owner Equity\",\"accountType\":\"EQUITY\",\"currency\":\"USD\",\"allowNegativeBalance\":false}"
+```
+
+Copy the returned `accountId` values.
+
+### 5. Post a balanced journal entry
+
+```bash
+curl -u operator:operator -X POST http://localhost:8080/api/v1/journal-entries ^
+  -H "Content-Type: application/json" ^
+  -d "{\"idempotencyKey\":\"manual-e2e-001\",\"externalReference\":\"MANUAL-E2E-001\",\"description\":\"Initial funding\",\"currency\":\"USD\",\"effectiveAt\":\"2026-07-15T10:00:00Z\",\"lines\":[{\"accountId\":\"<cash-account-id>\",\"direction\":\"DEBIT\",\"amount\":250.00,\"narrative\":\"Cash funded\"},{\"accountId\":\"<equity-account-id>\",\"direction\":\"CREDIT\",\"amount\":250.00,\"narrative\":\"Equity funded\"}]}"
+```
+
+### 6. Confirm the unpublished outbox event exists
+
+```bash
+curl -u publisher:publisher http://localhost:8080/api/v1/outbox-events?published=false
+```
+
+Find the event whose payload contains `manual-e2e-001`, then copy its `eventId`.
+
+### 7. Publish the outbox event
+
+```bash
+curl -u publisher:publisher -X POST http://localhost:8080/api/v1/outbox-events/<event-id>/publish
+```
+
+The response should include:
+
+- `destinationTopic` = `ledger.journal.entries`
+- a non-null `publishedPartition`
+- a non-null `publishedOffset`
+
+### 8. Verify the message in Kafka
+
+Use the broker's internal listener from inside the container:
+
+```bash
+docker exec event-driven-ledger-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:19092 \
+  --topic ledger.journal.entries \
+  --from-beginning \
+  --timeout-ms 10000
+```
+
+You should see a JSON event containing the same journal entry and idempotency key, for example:
+
+```json
+{
+  "journalEntryId": "36f164f8-2958-4917-98c1-9e64ce43bf1c",
+  "idempotencyKey": "manual-e2e-001",
+  "externalReference": "MANUAL-E2E-001",
+  "currency": "USD",
+  "totalDebit": 250.00,
+  "totalCredit": 250.00,
+  "lineCount": 2,
+  "reversalOfJournalEntryId": null,
+  "reversalReason": null
+}
+```
+
+### 9. Optional deeper checks
+
+- `curl -u auditor:auditor http://localhost:8080/api/v1/reports/trial-balance?currency=USD`
+- `curl -u auditor:auditor http://localhost:8080/api/v1/accounts/<cash-account-id>/statement?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z`
+- `curl -u reconciler:reconciler -X POST http://localhost:8080/api/v1/reconciliations ...`
+- `curl -u admin:admin http://localhost:8080/api/v1/admin/users`
+
+## Troubleshooting
+
+- If `docker compose up -d` fails with `open //./pipe/dockerDesktopLinuxEngine`, start Docker Desktop first and wait for the Linux engine to finish booting.
+- If `java -jar target/event-driven-ledger-platform-0.0.1-SNAPSHOT.jar` fails with `UnsupportedClassVersionError`, run it with your Java 26 installation or update `JAVA_HOME` and `PATH` to point to Java 26.
+- If `docker compose ps` shows PostgreSQL but not Kafka, run `docker compose logs kafka` first.
+- The application connects to Kafka from the host with `localhost:9092`.
+- Kafka inspection from inside the container should use `kafka:19092`, not `localhost:9092`.
+- On this machine, direct `docker compose` works reliably, but Testcontainers may still skip Docker-backed tests if Java cannot detect Docker Desktop correctly.
 
 ## Roadmap
 

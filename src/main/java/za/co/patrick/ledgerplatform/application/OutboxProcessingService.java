@@ -36,6 +36,7 @@ public class OutboxProcessingService {
             fixedDelayString = "${app.outbox.processor.fixed-delay-ms:30000}",
             initialDelayString = "${app.outbox.processor.initial-delay-ms:5000}"
     )
+    @Transactional
     public void publishScheduledBatch() {
         if (!properties.enabled()) {
             return;
@@ -47,7 +48,7 @@ public class OutboxProcessingService {
     public OutboxPublishBatchResponse publishPendingBatch(int requestedCount) {
         int batchSize = requestedCount <= 0 ? properties.batchSize() : requestedCount;
         List<OutboxEventEntity> events = outboxEventRepository
-                .findByPublishedAtIsNullOrderByCreatedAtAsc(PageRequest.of(0, batchSize))
+                .findUnpublishedForUpdate(PageRequest.of(0, batchSize))
                 .getContent();
 
         int publishedCount = 0;
@@ -73,7 +74,7 @@ public class OutboxProcessingService {
 
     @Transactional
     public OutboxEventResponse publishEvent(UUID eventId) {
-        OutboxEventEntity event = outboxEventRepository.findById(eventId)
+        OutboxEventEntity event = outboxEventRepository.findByIdForUpdate(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Outbox event %s was not found.".formatted(eventId)));
         if (event.getPublishedAt() != null) {
             return toResponse(event);

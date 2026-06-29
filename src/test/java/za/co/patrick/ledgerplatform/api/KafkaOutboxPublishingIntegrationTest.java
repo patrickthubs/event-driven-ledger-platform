@@ -2,6 +2,7 @@ package za.co.patrick.ledgerplatform.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -15,14 +16,16 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import za.co.patrick.ledgerplatform.config.OutboxKafkaProperties;
 
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -51,8 +54,13 @@ class KafkaOutboxPublishingIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private OutboxKafkaProperties outboxKafkaProperties;
+
     @Test
     void shouldPublishOutboxEventToKafka() throws Exception {
+        awaitTopicAvailability();
+
         String assetLocation = createAccount("""
                 {
                   "accountNumber": "9100",
@@ -119,7 +127,7 @@ class KafkaOutboxPublishingIntegrationTest {
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName(),
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName()
         ))) {
-            consumer.subscribe(java.util.List.of("ledger.journal.entries"));
+            consumer.subscribe(java.util.List.of(outboxKafkaProperties.topicName()));
 
             ConsumerRecord<String, String> publishedRecord = null;
             for (int attempt = 0; attempt < 10 && publishedRecord == null; attempt++) {
@@ -148,5 +156,15 @@ class KafkaOutboxPublishingIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getHeader("Location");
+    }
+
+    private void awaitTopicAvailability() throws Exception {
+        try (AdminClient adminClient = AdminClient.create(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()
+        ))) {
+            adminClient.describeTopics(java.util.List.of(outboxKafkaProperties.topicName()))
+                    .allTopicNames()
+                    .get(30, TimeUnit.SECONDS);
+        }
     }
 }
